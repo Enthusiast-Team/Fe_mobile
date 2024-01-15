@@ -1,53 +1,56 @@
-import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:http/http.dart' as http;
+import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 
 class Vision extends StatefulWidget {
   @override
-  _CameraWidgetState createState() => _CameraWidgetState();
+  _VisionState createState() => _VisionState();
 }
 
-class _CameraWidgetState extends State<Vision> {
-  String inputValue = '';
-  String predictedImageName = '';
-  String predictedprobability = '';
-  String uploadedImage = '';
-  final TextEditingController inputController = TextEditingController();
+class _VisionState extends State<Vision> {
+  String base64Image = '';
+  String backendResponse = '';
 
-  Future<void> pickImage(ImageSource source) async {
-    final pickedImage = await ImagePicker().getImage(source: source);
-    if (pickedImage != null) {
-      File imageFile = File(pickedImage.path);
-      handleInputChange(imageFile);
+  Future<void> _getImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.getImage(source: ImageSource.gallery);
+
+    if (pickedFile != null) {
+      // Convert image to base64
+      List<int> imageBytes = await pickedFile.readAsBytes();
+      String imageBase64 = base64Encode(Uint8List.fromList(imageBytes));
+
+      setState(() {
+        base64Image = imageBase64;
+      });
+      print('Base64 Image: $base64Image');
     }
   }
 
-  void handleInputChange(File image) async {
-    String base64String = base64Encode(image.readAsBytesSync());
-    setState(() {
-      uploadedImage = base64String;
-      inputValue = base64String;
-      print('Gambar dalam format base64: $base64String');
-    });
-  }
-
-  void submit() async {
+  Future<void> _sendImageToServer() async {
     try {
-      var response = await http.post(
-        Uri.parse('http://localhost:5000/predict'),
-        headers: {
-          'Content-type': 'application/json',
-        },
-        body: json.encode({'message': inputValue}),
-      );
-      print(response);
-      var data = json.decode(response.body);
-      setState(() {
-        predictedImageName = data['nama'];
-        predictedprobability = data['probability'];
-      });
+      if (base64Image.isNotEmpty) {
+        // Kirim gambar ke server
+        var response = await http.post(
+          Uri.parse('http://4.145.90.55:8000/predict'),
+          headers: {
+            'Content-type': 'application/json',
+          },
+          body: json.encode({'message': base64Image}),
+        );
+
+        print(response);
+        var data = json.decode(response.body);
+        setState(() {
+          backendResponse = data['nama'];
+          // Ubah variabel predictedprobability sesuai kebutuhan, karena tidak didefinisikan sebelumnya
+          // predictedprobability = data['probability'];
+        });
+      } else {
+        print('Pilih gambar terlebih dahulu');
+      }
     } catch (error) {
       print('Gagal terkirim: $error');
     }
@@ -56,38 +59,33 @@ class _CameraWidgetState extends State<Vision> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: Text('Deteksi Artefak'),
+      ),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Tampilkan gambar yang diunggah atau gambar default
-            Image.memory(base64Decode(uploadedImage)),
+          children: <Widget>[
+            base64Image.isNotEmpty
+                ? Image.memory(
+                    Uint8List.fromList(base64.decode(base64Image)),
+                    width: 200,
+                    height: 200,
+                    fit: BoxFit.cover,
+                  )
+                : Container(),
+            SizedBox(height: 20),
             ElevatedButton(
-              onPressed: () async {
-                pickImage(ImageSource.gallery); // Memilih gambar dari galeri
-              },
+              onPressed: _getImage,
               child: Text('Pilih Gambar'),
             ),
+            SizedBox(height: 10),
             ElevatedButton(
-              onPressed: submit,
+              onPressed: _sendImageToServer,
               child: Text('Submit'),
             ),
-            // Tampilkan nama gambar hasil prediksi
-            if (predictedImageName != '')
-              Text(
-                'Artefak: $predictedImageName',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),if (predictedprobability != '')
-              Text(
-                'probability : $predictedprobability',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+            SizedBox(height: 10),
+            Text('Hasil Deteksi: $backendResponse'),
           ],
         ),
       ),
